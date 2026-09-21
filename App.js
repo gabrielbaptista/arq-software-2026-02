@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -62,12 +63,14 @@ export default function App() {
   const [mode, setMode] = useState('login');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('info');
+  const [databaseStatus, setDatabaseStatus] = useState('loading');
 
   const isCompactLayout = width < 420;
   const isHomeMode = mode === 'home';
   const isProductMode = mode === 'products';
   const isResetMode = mode === 'reset';
   const isRegisterMode = mode === 'register';
+  const isDatabaseUnavailable = databaseStatus !== 'ready';
 
   const cardWidth = useMemo(() => {
     if (width >= 900) return 460;
@@ -78,17 +81,29 @@ export default function App() {
   useEffect(() => {
     Promise.all([initializeAuthDatabase(), initializeProductDatabase()])
       .then(() => getProducts())
-      .then(setProducts)
+      .then((registeredProducts) => {
+        setProducts(registeredProducts);
+        setDatabaseStatus('ready');
+      })
       .catch(() => {
+        setDatabaseStatus('error');
         setMessageType('error');
         setMessage('Erro ao iniciar banco local.');
       });
   }, []);
 
   useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    AccessibilityInfo.announceForAccessibility(message);
+  }, [message]);
+
+  useEffect(() => {
     let isActive = true;
 
-    if (!isProductMode) {
+    if (!isProductMode || isDatabaseUnavailable) {
       return () => {
         isActive = false;
       };
@@ -110,7 +125,7 @@ export default function App() {
     return () => {
       isActive = false;
     };
-  }, [isProductMode]);
+  }, [isDatabaseUnavailable, isProductMode]);
 
   const loadProducts = async () => {
     try {
@@ -155,6 +170,11 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !password) {
       showError('Informe e-mail e senha.');
       return;
@@ -177,6 +197,11 @@ export default function App() {
   };
 
   const handleRegister = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !password || !recoveryCode) {
       showError('Informe e-mail, senha e código de recuperação.');
       return;
@@ -199,6 +224,11 @@ export default function App() {
   };
 
   const handlePasswordReset = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !recoveryCode || !newPassword) {
       showError('Informe e-mail, código de recuperação e nova senha.');
       return;
@@ -262,8 +292,9 @@ export default function App() {
 
       <TouchableOpacity
         accessibilityRole="button"
+        disabled={isDatabaseUnavailable}
         onPress={() => switchToMode('products')}
-        style={styles.primaryButton}
+        style={[styles.primaryButton, isDatabaseUnavailable && styles.disabledButton]}
       >
         <Text style={styles.primaryButtonText}>Cadastrar produto</Text>
       </TouchableOpacity>
@@ -309,8 +340,9 @@ export default function App() {
 
       <TouchableOpacity
         accessibilityRole="button"
+        disabled={isDatabaseUnavailable}
         onPress={handleCreateProduct}
-        style={styles.primaryButton}
+        style={[styles.primaryButton, isDatabaseUnavailable && styles.disabledButton]}
       >
         <Text style={styles.primaryButtonText}>Salvar produto</Text>
       </TouchableOpacity>
@@ -367,7 +399,7 @@ export default function App() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={[styles.card, { width: cardWidth }]}>
+          <View style={[styles.card, { width: cardWidth }]}> 
             {isHomeMode ? (
               renderHomeScreen()
             ) : isProductMode ? (
@@ -423,8 +455,9 @@ export default function App() {
 
                 <TouchableOpacity
                   accessibilityRole="button"
+                  disabled={isDatabaseUnavailable}
                   onPress={handlePrimaryAction}
-                  style={styles.primaryButton}
+                  style={[styles.primaryButton, isDatabaseUnavailable && styles.disabledButton]}
                 >
                   <Text style={styles.primaryButtonText}>
                     {isResetMode ? 'Atualizar senha' : isRegisterMode ? 'Criar conta' : 'Entrar'}
@@ -435,6 +468,7 @@ export default function App() {
                   <>
                     <TouchableOpacity
                       accessibilityRole="button"
+                      disabled={isDatabaseUnavailable}
                       onPress={() => switchToMode('register')}
                       style={styles.secondaryButton}
                     >
@@ -442,6 +476,7 @@ export default function App() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       accessibilityRole="button"
+                      disabled={isDatabaseUnavailable}
                       onPress={() => switchToMode('reset')}
                       style={styles.secondaryButton}
                     >
@@ -451,6 +486,7 @@ export default function App() {
                 ) : (
                   <TouchableOpacity
                     accessibilityRole="button"
+                    disabled={isDatabaseUnavailable}
                     onPress={() => switchToMode('login')}
                     style={styles.secondaryButton}
                   >
@@ -549,6 +585,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600'
   },
+  disabledButton: {
+    opacity: 0.6
+  },
   secondaryButton: {
     marginTop: 10,
     alignItems: 'center'
@@ -604,7 +643,7 @@ const styles = StyleSheet.create({
     fontWeight: '500'
   },
   infoMessage: {
-    color: '#111827'
+    color: '#1f2937'
   },
   successMessage: {
     color: '#166534'
