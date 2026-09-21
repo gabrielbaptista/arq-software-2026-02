@@ -1,0 +1,15 @@
+{
+  "name": "arq-software-2026-02",
+  "version": "1.0.0",
+  "private": true,
+  "main": "App.js",
+  "scripts": {
+    "start": "expo start"
+  },
+  "dependencies": {
+    "expo": "^53.0.0",
+    "expo-sqlite": "^15.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.79.0"
+  }
+}
