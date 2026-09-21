@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import {
   authenticateUser,
+  getDevelopmentCredentialsHint,
   initializeAuthDatabase,
   updatePasswordByEmail
 } from './src/database/authRepository';
@@ -21,6 +22,7 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [isResetMode, setIsResetMode] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -41,6 +43,7 @@ export default function App() {
   const clearSensitiveFields = () => {
     setPassword('');
     setNewPassword('');
+    setRecoveryCode('');
   };
 
   const handleLogin = async () => {
@@ -49,31 +52,45 @@ export default function App() {
       return;
     }
 
-    const isValidUser = await authenticateUser(email, password);
-    setMessage(isValidUser ? 'Login realizado com sucesso.' : 'Credenciais inválidas.');
+    try {
+      const isValidUser = await authenticateUser(email, password);
+      setMessage(isValidUser ? 'Login realizado com sucesso.' : 'Credenciais inválidas.');
 
-    if (isValidUser) {
-      clearSensitiveFields();
+      if (isValidUser) {
+        clearSensitiveFields();
+      }
+    } catch {
+      setMessage('Erro ao autenticar usuário no banco local.');
     }
   };
 
   const handlePasswordReset = async () => {
-    if (!email.trim() || !newPassword) {
-      setMessage('Informe e-mail e nova senha.');
+    if (!email.trim() || !recoveryCode || !newPassword) {
+      setMessage('Informe e-mail, código de recuperação e nova senha.');
       return;
     }
 
-    const didUpdatePassword = await updatePasswordByEmail(email, newPassword);
+    try {
+      const didUpdatePassword = await updatePasswordByEmail(
+        email,
+        recoveryCode,
+        newPassword
+      );
 
-    if (!didUpdatePassword) {
-      setMessage('Usuário não encontrado.');
-      return;
+      if (!didUpdatePassword) {
+        setMessage('Dados inválidos para redefinição de senha.');
+        return;
+      }
+
+      clearSensitiveFields();
+      setIsResetMode(false);
+      setMessage('Senha atualizada. Faça login com a nova senha.');
+    } catch {
+      setMessage('Erro ao atualizar senha no banco local.');
     }
-
-    clearSensitiveFields();
-    setIsResetMode(false);
-    setMessage('Senha atualizada. Faça login com a nova senha.');
   };
+
+  const developmentCredentialsHint = getDevelopmentCredentialsHint();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -105,13 +122,22 @@ export default function App() {
               value={password}
             />
           ) : (
-            <TextInput
-              onChangeText={setNewPassword}
-              placeholder="Nova senha"
-              secureTextEntry
-              style={[styles.input, isCompactLayout && styles.compactInput]}
-              value={newPassword}
-            />
+            <>
+              <TextInput
+                autoCapitalize="characters"
+                onChangeText={setRecoveryCode}
+                placeholder="Código de recuperação"
+                style={[styles.input, isCompactLayout && styles.compactInput]}
+                value={recoveryCode}
+              />
+              <TextInput
+                onChangeText={setNewPassword}
+                placeholder="Nova senha"
+                secureTextEntry
+                style={[styles.input, isCompactLayout && styles.compactInput]}
+                value={newPassword}
+              />
+            </>
           )}
 
           <TouchableOpacity
@@ -137,7 +163,9 @@ export default function App() {
           </TouchableOpacity>
 
           {message ? <Text style={styles.message}>{message}</Text> : null}
-          <Text style={styles.hint}>Usuário teste: usuario@exemplo.com / 123456</Text>
+          {developmentCredentialsHint ? (
+            <Text style={styles.hint}>{developmentCredentialsHint}</Text>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
