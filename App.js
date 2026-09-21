@@ -25,6 +25,7 @@ export default function App() {
   const [recoveryCode, setRecoveryCode] = useState('');
   const [mode, setMode] = useState('login');
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('info');
 
   const isCompactLayout = width < 420;
   const isResetMode = mode === 'reset';
@@ -38,6 +39,7 @@ export default function App() {
 
   useEffect(() => {
     initializeAuthDatabase().catch(() => {
+      setMessageType('error');
       setMessage('Erro ao iniciar banco local.');
     });
   }, []);
@@ -51,30 +53,44 @@ export default function App() {
   const switchToMode = (nextMode) => {
     setMode(nextMode);
     clearSensitiveFields();
+    setMessageType('info');
     setMessage('');
+  };
+
+  const showError = (text) => {
+    setMessageType('error');
+    setMessage(text);
+  };
+
+  const showSuccess = (text) => {
+    setMessageType('success');
+    setMessage(text);
   };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      setMessage('Informe e-mail e senha.');
+      showError('Informe e-mail e senha.');
       return;
     }
 
     try {
       const isValidUser = await authenticateUser(email, password);
-      setMessage(isValidUser ? 'Login realizado com sucesso.' : 'Credenciais inválidas.');
 
-      if (isValidUser) {
-        clearSensitiveFields();
+      if (!isValidUser) {
+        showError('Credenciais inválidas.');
+        return;
       }
+
+      showSuccess('Login realizado com sucesso.');
+      clearSensitiveFields();
     } catch {
-      setMessage('Erro ao autenticar usuário no banco local.');
+      showError('Erro ao autenticar usuário no banco local.');
     }
   };
 
   const handleRegister = async () => {
     if (!email.trim() || !password || !recoveryCode) {
-      setMessage('Informe e-mail, senha e código de recuperação.');
+      showError('Informe e-mail, senha e código de recuperação.');
       return;
     }
 
@@ -82,21 +98,21 @@ export default function App() {
       const didCreateUser = await createUser(email, password, recoveryCode);
 
       if (!didCreateUser) {
-        setMessage('Não foi possível criar conta. E-mail pode já existir.');
+        showError('Não foi possível criar conta. E-mail pode já existir.');
         return;
       }
 
       clearSensitiveFields();
       switchToMode('login');
-      setMessage('Conta criada com sucesso. Faça login.');
+      showSuccess('Conta criada com sucesso. Faça login.');
     } catch {
-      setMessage('Erro ao criar conta no banco local.');
+      showError('Erro ao criar conta no banco local.');
     }
   };
 
   const handlePasswordReset = async () => {
     if (!email.trim() || !recoveryCode || !newPassword) {
-      setMessage('Informe e-mail, código de recuperação e nova senha.');
+      showError('Informe e-mail, código de recuperação e nova senha.');
       return;
     }
 
@@ -108,15 +124,15 @@ export default function App() {
       );
 
       if (!didUpdatePassword) {
-        setMessage('Código de recuperação inválido ou usuário não encontrado.');
+        showError('Código de recuperação inválido ou usuário não encontrado.');
         return;
       }
 
       clearSensitiveFields();
       switchToMode('login');
-      setMessage('Senha atualizada. Faça login com a nova senha.');
+      showSuccess('Senha atualizada. Faça login com a nova senha.');
     } catch {
-      setMessage('Erro ao atualizar senha no banco local.');
+      showError('Erro ao atualizar senha no banco local.');
     }
   };
 
@@ -218,7 +234,7 @@ export default function App() {
           {message ? (
             <Text
               accessibilityLiveRegion="polite"
-              accessibilityRole="alert"
+              accessibilityRole={messageType === 'error' ? 'alert' : undefined}
               style={styles.message}
             >
               {message}
