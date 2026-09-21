@@ -69,9 +69,35 @@ async function ensureUsersTableSchema(db) {
   }
 }
 
+async function migrateLegacyPasswords(db, columnNames) {
+  if (!columnNames.has('password')) {
+    return;
+  }
+
+  const legacyUsers = await db.getAllAsync(
+    `SELECT id, password
+     FROM users
+     WHERE password IS NOT NULL
+       AND TRIM(password) <> ''
+       AND (password_hash IS NULL OR password_salt IS NULL);`
+  );
+
+  for (const legacyUser of legacyUsers) {
+    const passwordSalt = createSaltHex();
+    const passwordHash = deriveHash(legacyUser.password, passwordSalt);
+
+    await db.runAsync(
+      'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?;',
+      [passwordHash, passwordSalt, legacyUser.id]
+    );
+  }
+}
+
 export async function initializeAuthDatabase() {
   const db = await dbPromise;
   await ensureUsersTableSchema(db);
+  const columnNames = await getUsersColumnSet(db);
+  await migrateLegacyPasswords(db, columnNames);
 }
 
 export async function authenticateUser(email, password) {
@@ -98,11 +124,14 @@ export async function authenticateUser(email, password) {
     return deriveHash(password, user.password_salt) === user.password_hash;
   }
 
-  if (typeof user.password !== 'string') {
-    return false;
-  }
+  let isLegacyPasswordValid = false;
 
-  const isLegacyPasswordValid = user.password === password;
+  if (user.password_hash && !user.password_salt) {
+    const legacyPasswordHash = await sha256Hex(password);
+    isLegacyPasswordValid = legacyPasswordHash === user.password_hash;
+  } else if (typeof user.password === 'string') {
+    isLegacyPasswordValid = user.password === password;
+  }
 
   if (!isLegacyPasswordValid) {
     return false;
@@ -180,23 +209,12 @@ export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
 
   const newPasswordSalt = createSaltHex();
   const newPasswordHash = deriveHash(newPassword, newPasswordSalt);
-  const newRecoveryCodeSalt = createSaltHex();
-  const newRecoveryCodeHash = deriveHash(recoveryCode, newRecoveryCodeSalt);
-
   const updateResult = await db.runAsync(
     `UPDATE users
      SET password_hash = ?,
-         password_salt = ?,
-         recovery_code_hash = ?,
-         recovery_code_salt = ?
+         password_salt = ?
      WHERE id = ?;`,
-    [
-      newPasswordHash,
-      newPasswordSalt,
-      newRecoveryCodeHash,
-      newRecoveryCodeSalt,
-      user.id
-    ]
+    [newPasswordHash, newPasswordSalt, user.id]
   );
 
   return updateResult.changes > 0;

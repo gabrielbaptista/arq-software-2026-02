@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -43,6 +44,15 @@ export default function App() {
       setMessage('Erro ao iniciar banco local.');
     });
   }, []);
+
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    AccessibilityInfo.announceForAccessibility(message);
+  }, [message]);
 
   const clearSensitiveFields = () => {
     setPassword('');
@@ -234,7 +244,8 @@ export default function App() {
           {message ? (
             <Text
               accessibilityLiveRegion="polite"
-              accessibilityRole={messageType === 'error' ? 'alert' : undefined}
+              accessibilityRole={messageType === 'error' ? 'alert' : 'text'}
+              accessible
               style={[
                 styles.message,
                 messageType === 'error'
