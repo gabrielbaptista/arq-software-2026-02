@@ -39,9 +39,9 @@ async function ensureUsersTableSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
+      password_salt TEXT,
       recovery_code_hash TEXT NOT NULL,
-      recovery_code_salt TEXT NOT NULL
+      recovery_code_salt TEXT
     );
   `);
 

@@ -448,7 +448,14 @@ export default function App() {
               <Text
                 accessibilityLiveRegion="polite"
                 accessibilityRole={messageType === 'error' ? 'alert' : undefined}
-                style={styles.message}
+                style={[
+                  styles.message,
+                  messageType === 'error'
+                    ? styles.errorMessage
+                    : messageType === 'success'
+                      ? styles.successMessage
+                      : styles.infoMessage
+                ]}
               >
                 {message}
               </Text>
@@ -576,7 +583,16 @@ const styles = StyleSheet.create({
   message: {
     marginTop: 14,
     textAlign: 'center',
-    color: '#111827',
-    fontSize: 14
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  infoMessage: {
+    color: '#111827'
+  },
+  successMessage: {
+    color: '#166534'
+  },
+  errorMessage: {
+    color: '#b91c1c'
   }
 });
