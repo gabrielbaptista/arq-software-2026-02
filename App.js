@@ -85,6 +85,33 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    if (!isProductMode) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    getProducts()
+      .then((registeredProducts) => {
+        if (isActive) {
+          setProducts(registeredProducts);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setMessageType('error');
+          setMessage('Erro ao carregar produtos cadastrados.');
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [isProductMode]);
+
   const loadProducts = async () => {
     try {
       const registeredProducts = await getProducts();
@@ -115,10 +142,6 @@ export default function App() {
     }
     setMessageType('info');
     setMessage('');
-
-    if (nextMode === 'products') {
-      loadProducts();
-    }
   };
 
   const showError = (text) => {
@@ -276,6 +299,7 @@ export default function App() {
 
       <TextInput
         onChangeText={setExpiryDate}
+        keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
         placeholder="Validade (AAAA-MM-DD)"
         style={[styles.input, isCompactLayout && styles.compactInput]}
         value={expiryDate}

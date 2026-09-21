@@ -11,6 +11,13 @@ const DERIVATION_OPTIONS = {
   dkLen: 32
 };
 
+async function hashLegacyValue(value) {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    value
+  );
+}
+
 function createSaltHex() {
   return bytesToHex(Crypto.getRandomBytes(16));
 }
@@ -48,17 +55,13 @@ async function ensureUsersTableSchema(db) {
     return;
   }
 
-  await db.execAsync(`
-    DROP TABLE users;
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
-      recovery_code_hash TEXT NOT NULL,
-      recovery_code_salt TEXT NOT NULL
-    );
-  `);
+  if (!columnNames.has('password_salt')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN password_salt TEXT;');
+  }
+
+  if (!columnNames.has('recovery_code_salt')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN recovery_code_salt TEXT;');
+  }
 }
 
 export async function initializeAuthDatabase() {
@@ -77,6 +80,24 @@ export async function authenticateUser(email, password) {
 
   if (!user) {
     return false;
+  }
+
+  if (!user.password_salt) {
+    const legacyPasswordHash = await hashLegacyValue(password);
+
+    if (legacyPasswordHash !== user.password_hash) {
+      return false;
+    }
+
+    const passwordSalt = createSaltHex();
+    const migratedPasswordHash = deriveHash(password, passwordSalt);
+
+    await db.runAsync(
+      'UPDATE users SET password_hash = ?, password_salt = ? WHERE email = ?;',
+      [migratedPasswordHash, passwordSalt, normalizedEmail]
+    );
+
+    return true;
   }
 
   return deriveHash(password, user.password_salt) === user.password_hash;
@@ -129,18 +150,35 @@ export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
     return false;
   }
 
-  const providedRecoveryHash = deriveHash(recoveryCode, user.recovery_code_salt);
+  const providedRecoveryHash = user.recovery_code_salt
+    ? deriveHash(recoveryCode, user.recovery_code_salt)
+    : await hashLegacyValue(recoveryCode);
 
   if (providedRecoveryHash !== user.recovery_code_hash) {
     return false;
   }
 
   const newPasswordSalt = createSaltHex();
+  const newRecoveryCodeSalt = user.recovery_code_salt || createSaltHex();
   const newPasswordHash = deriveHash(newPassword, newPasswordSalt);
+  const migratedRecoveryCodeHash = user.recovery_code_salt
+    ? user.recovery_code_hash
+    : deriveHash(recoveryCode, newRecoveryCodeSalt);
 
   const updateResult = await db.runAsync(
-    'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?;',
-    [newPasswordHash, newPasswordSalt, user.id]
+    `UPDATE users
+     SET password_hash = ?,
+         password_salt = ?,
+         recovery_code_hash = ?,
+         recovery_code_salt = ?
+     WHERE id = ?;`,
+    [
+      newPasswordHash,
+      newPasswordSalt,
+      migratedRecoveryCodeHash,
+      newRecoveryCodeSalt,
+      user.id
+    ]
   );
 
   return updateResult.changes > 0;
