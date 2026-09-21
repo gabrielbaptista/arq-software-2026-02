@@ -3,13 +3,21 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import * as Crypto from 'expo-crypto';
 import * as SQLite from 'expo-sqlite';
+import { LOCAL_DATABASE_NAME } from './databaseConfig';
 
-const dbPromise = SQLite.openDatabaseAsync('auth.db');
+const dbPromise = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME);
 
 const DERIVATION_OPTIONS = {
   c: 120000,
   dkLen: 32
 };
+
+async function hashLegacyValue(value) {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    value
+  );
+}
 
 function createSaltHex() {
   return bytesToHex(Crypto.getRandomBytes(16));
@@ -24,13 +32,6 @@ function deriveHash(secret, saltHex) {
   );
 
   return bytesToHex(derivedBytes);
-}
-
-async function sha256Hex(value) {
-  return Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    value
-  );
 }
 
 async function getUsersColumnSet(db) {
@@ -127,7 +128,7 @@ export async function authenticateUser(email, password) {
   let isLegacyPasswordValid = false;
 
   if (user.password_hash && !user.password_salt) {
-    const legacyPasswordHash = await sha256Hex(password);
+    const legacyPasswordHash = await hashLegacyValue(password);
     isLegacyPasswordValid = legacyPasswordHash === user.password_hash;
   } else if (typeof user.password === 'string') {
     isLegacyPasswordValid = user.password === password;
@@ -139,7 +140,6 @@ export async function authenticateUser(email, password) {
 
   const passwordSalt = createSaltHex();
   const passwordHash = deriveHash(password, passwordSalt);
-
   const legacyPasswordSetClause = columnNames.has('password') ? ', password = NULL' : '';
 
   await db.runAsync(
@@ -180,8 +180,12 @@ export async function createUser(email, password, recoveryCode) {
     );
 
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error?.message?.includes('UNIQUE constraint failed: users.email')) {
+      return false;
+    }
+
+    throw error;
   }
 }
 
@@ -206,22 +210,34 @@ export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
 
   const providedRecoveryHash = user.recovery_code_salt
     ? deriveHash(recoveryCode, user.recovery_code_salt)
-    : await sha256Hex(recoveryCode);
+    : await hashLegacyValue(recoveryCode);
 
   if (providedRecoveryHash !== user.recovery_code_hash) {
     return false;
   }
 
   const newPasswordSalt = createSaltHex();
+  const newRecoveryCodeSalt = user.recovery_code_salt || createSaltHex();
   const newPasswordHash = deriveHash(newPassword, newPasswordSalt);
+  const migratedRecoveryCodeHash = user.recovery_code_salt
+    ? user.recovery_code_hash
+    : deriveHash(recoveryCode, newRecoveryCodeSalt);
   const legacyPasswordSetClause = columnNames.has('password') ? ', password = NULL' : '';
 
   const updateResult = await db.runAsync(
     `UPDATE users
      SET password_hash = ?,
-         password_salt = ?${legacyPasswordSetClause}
+         password_salt = ?,
+         recovery_code_hash = ?,
+         recovery_code_salt = ?${legacyPasswordSetClause}
      WHERE id = ?;`,
-    [newPasswordHash, newPasswordSalt, user.id]
+    [
+      newPasswordHash,
+      newPasswordSalt,
+      migratedRecoveryCodeHash,
+      newRecoveryCodeSalt,
+      user.id
+    ]
   );
 
   return updateResult.changes > 0;
