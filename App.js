@@ -261,6 +261,7 @@ export default function App() {
       </Text>
 
       <TouchableOpacity
+        accessibilityRole="button"
         onPress={() => switchToMode('products')}
         style={styles.primaryButton}
       >
@@ -268,6 +269,7 @@ export default function App() {
       </TouchableOpacity>
 
       <TouchableOpacity
+        accessibilityRole="button"
         onPress={() => switchToMode('login')}
         style={styles.secondaryButton}
       >
@@ -306,6 +308,7 @@ export default function App() {
       />
 
       <TouchableOpacity
+        accessibilityRole="button"
         onPress={handleCreateProduct}
         style={styles.primaryButton}
       >
@@ -313,6 +316,7 @@ export default function App() {
       </TouchableOpacity>
 
       <TouchableOpacity
+        accessibilityRole="button"
         onPress={() => switchToMode('home')}
         style={styles.secondaryButton}
       >
@@ -323,7 +327,15 @@ export default function App() {
         <Text style={styles.sectionTitle}>Produtos cadastrados</Text>
         {products.length ? (
           products.map((product) => (
-            <View key={product.id} style={styles.productItem}>
+            <View
+              accessibilityLabel={`${product.name}${
+                product.description ? `. ${product.description}` : ''
+              }. Validade ${formatExpiryDate(product.expiryDate)}.`}
+              accessibilityRole="text"
+              accessible
+              key={product.id}
+              style={styles.productItem}
+            >
               <Text style={styles.productName}>{product.name}</Text>
               {product.description ? (
                 <Text style={styles.productDescription}>{product.description}</Text>
@@ -410,6 +422,7 @@ export default function App() {
                 )}
 
                 <TouchableOpacity
+                  accessibilityRole="button"
                   onPress={handlePrimaryAction}
                   style={styles.primaryButton}
                 >
@@ -421,12 +434,14 @@ export default function App() {
                 {mode === 'login' ? (
                   <>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       onPress={() => switchToMode('register')}
                       style={styles.secondaryButton}
                     >
                       <Text style={styles.secondaryButtonText}>Criar conta</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       onPress={() => switchToMode('reset')}
                       style={styles.secondaryButton}
                     >
@@ -435,6 +450,7 @@ export default function App() {
                   </>
                 ) : (
                   <TouchableOpacity
+                    accessibilityRole="button"
                     onPress={() => switchToMode('login')}
                     style={styles.secondaryButton}
                   >
@@ -448,7 +464,7 @@ export default function App() {
               <Text
                 accessible
                 accessibilityLiveRegion="polite"
-                accessibilityRole={messageType === 'error' ? 'alert' : undefined}
+                accessibilityRole={messageType === 'error' ? 'alert' : 'text'}
                 style={[
                   styles.message,
                   messageType === 'error'
