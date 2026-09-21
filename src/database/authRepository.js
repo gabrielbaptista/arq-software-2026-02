@@ -3,8 +3,9 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import * as Crypto from 'expo-crypto';
 import * as SQLite from 'expo-sqlite';
+import { LOCAL_DATABASE_NAME } from './databaseConfig';
 
-const dbPromise = SQLite.openDatabaseAsync('auth.db');
+const dbPromise = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME);
 
 const DERIVATION_OPTIONS = {
   c: 120000,

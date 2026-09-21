@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
+import { LOCAL_DATABASE_NAME } from './databaseConfig';
 
-const dbPromise = SQLite.openDatabaseAsync('auth.db');
+const dbPromise = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME);
 
 async function ensureProductsTableSchema(db) {
   await db.execAsync(`
