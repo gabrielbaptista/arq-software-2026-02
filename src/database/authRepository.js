@@ -35,30 +35,34 @@ export async function authenticateUser(email, password) {
   return Boolean(user);
 }
 
-export async function resetOrCreatePasswordByEmail(email, recoveryCode, newPassword) {
+export async function createUser(email, password, recoveryCode) {
+  const db = await dbPromise;
+  const normalizedEmail = email.trim();
+  const passwordHash = await hashValue(password);
+  const recoveryCodeHash = await hashValue(recoveryCode);
+
+  try {
+    await db.runAsync(
+      'INSERT INTO users (email, password_hash, recovery_code_hash) VALUES (?, ?, ?);',
+      [normalizedEmail, passwordHash, recoveryCodeHash]
+    );
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
   const db = await dbPromise;
   const normalizedEmail = email.trim();
   const recoveryCodeHash = await hashValue(recoveryCode);
   const newPasswordHash = await hashValue(newPassword);
-
-  const existingUser = await db.getFirstAsync(
-    'SELECT id FROM users WHERE email = ?;',
-    [normalizedEmail]
-  );
-
-  if (!existingUser) {
-    await db.runAsync(
-      'INSERT INTO users (email, password_hash, recovery_code_hash) VALUES (?, ?, ?);',
-      [normalizedEmail, newPasswordHash, recoveryCodeHash]
-    );
-
-    return 'created';
-  }
 
   const result = await db.runAsync(
     'UPDATE users SET password_hash = ? WHERE email = ? AND recovery_code_hash = ?;',
     [newPasswordHash, normalizedEmail, recoveryCodeHash]
   );
 
-  return result.changes > 0 ? 'updated' : 'invalid_recovery';
+  return result.changes > 0;
 }

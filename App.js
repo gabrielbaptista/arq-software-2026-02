@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import {
   authenticateUser,
+  createUser,
   initializeAuthDatabase,
-  resetOrCreatePasswordByEmail
+  resetPasswordByEmail
 } from './src/database/authRepository';
 
 export default function App() {
@@ -22,10 +23,12 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
-  const [isResetMode, setIsResetMode] = useState(false);
+  const [mode, setMode] = useState('login');
   const [message, setMessage] = useState('');
 
   const isCompactLayout = width < 420;
+  const isResetMode = mode === 'reset';
+  const isRegisterMode = mode === 'register';
 
   const cardWidth = useMemo(() => {
     if (width >= 900) return 460;
@@ -43,6 +46,12 @@ export default function App() {
     setPassword('');
     setNewPassword('');
     setRecoveryCode('');
+  };
+
+  const switchToMode = (nextMode) => {
+    setMode(nextMode);
+    clearSensitiveFields();
+    setMessage('');
   };
 
   const handleLogin = async () => {
@@ -63,6 +72,28 @@ export default function App() {
     }
   };
 
+  const handleRegister = async () => {
+    if (!email.trim() || !password || !recoveryCode) {
+      setMessage('Informe e-mail, senha e código de recuperação.');
+      return;
+    }
+
+    try {
+      const didCreateUser = await createUser(email, password, recoveryCode);
+
+      if (!didCreateUser) {
+        setMessage('Não foi possível criar conta. E-mail pode já existir.');
+        return;
+      }
+
+      clearSensitiveFields();
+      switchToMode('login');
+      setMessage('Conta criada com sucesso. Faça login.');
+    } catch {
+      setMessage('Erro ao criar conta no banco local.');
+    }
+  };
+
   const handlePasswordReset = async () => {
     if (!email.trim() || !recoveryCode || !newPassword) {
       setMessage('Informe e-mail, código de recuperação e nova senha.');
@@ -70,27 +101,31 @@ export default function App() {
     }
 
     try {
-      const resetResult = await resetOrCreatePasswordByEmail(
+      const didUpdatePassword = await resetPasswordByEmail(
         email,
         recoveryCode,
         newPassword
       );
 
-      if (resetResult === 'invalid_recovery') {
-        setMessage('Código de recuperação inválido.');
+      if (!didUpdatePassword) {
+        setMessage('Código de recuperação inválido ou usuário não encontrado.');
         return;
       }
 
       clearSensitiveFields();
-      setIsResetMode(false);
-      setMessage(
-        resetResult === 'created'
-          ? 'Conta criada. Faça login com a senha definida.'
-          : 'Senha atualizada. Faça login com a nova senha.'
-      );
+      switchToMode('login');
+      setMessage('Senha atualizada. Faça login com a nova senha.');
     } catch {
       setMessage('Erro ao atualizar senha no banco local.');
     }
+  };
+
+  const handlePrimaryAction = () => {
+    if (isRegisterMode) {
+      return handleRegister();
+    }
+
+    return isResetMode ? handlePasswordReset() : handleLogin();
   };
 
   return (
@@ -102,7 +137,11 @@ export default function App() {
         <View style={[styles.card, { width: cardWidth }]}> 
           <Text style={styles.title}>Bem-vindo</Text>
           <Text style={styles.subtitle}>
-            {isResetMode ? 'Redefinir senha' : 'Faça login para continuar'}
+            {isResetMode
+              ? 'Redefinir senha'
+              : isRegisterMode
+                ? 'Criar nova conta'
+                : 'Faça login para continuar'}
           </Text>
 
           <TextInput
@@ -114,7 +153,7 @@ export default function App() {
             value={email}
           />
 
-          {!isResetMode ? (
+          {!isResetMode && (
             <TextInput
               onChangeText={setPassword}
               placeholder="Senha"
@@ -122,48 +161,69 @@ export default function App() {
               style={[styles.input, isCompactLayout && styles.compactInput]}
               value={password}
             />
-          ) : (
-            <>
-              <TextInput
-                autoCapitalize="characters"
-                onChangeText={setRecoveryCode}
-                placeholder="Código de recuperação"
-                style={[styles.input, isCompactLayout && styles.compactInput]}
-                value={recoveryCode}
-              />
-              <TextInput
-                onChangeText={setNewPassword}
-                placeholder="Nova senha"
-                secureTextEntry
-                style={[styles.input, isCompactLayout && styles.compactInput]}
-                value={newPassword}
-              />
-            </>
+          )}
+
+          {(isResetMode || isRegisterMode) && (
+            <TextInput
+              onChangeText={setRecoveryCode}
+              placeholder="Código de recuperação"
+              style={[styles.input, isCompactLayout && styles.compactInput]}
+              value={recoveryCode}
+            />
+          )}
+
+          {isResetMode && (
+            <TextInput
+              onChangeText={setNewPassword}
+              placeholder="Nova senha"
+              secureTextEntry
+              style={[styles.input, isCompactLayout && styles.compactInput]}
+              value={newPassword}
+            />
           )}
 
           <TouchableOpacity
-            onPress={isResetMode ? handlePasswordReset : handleLogin}
+            onPress={handlePrimaryAction}
             style={styles.primaryButton}
           >
             <Text style={styles.primaryButtonText}>
-              {isResetMode ? 'Atualizar senha' : 'Entrar'}
+              {isResetMode ? 'Atualizar senha' : isRegisterMode ? 'Criar conta' : 'Entrar'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => {
-              setIsResetMode((currentValue) => !currentValue);
-              clearSensitiveFields();
-              setMessage('');
-            }}
-            style={styles.secondaryButton}
-          >
-            <Text style={styles.secondaryButtonText}>
-              {isResetMode ? 'Voltar para login' : 'Esqueci minha senha'}
-            </Text>
-          </TouchableOpacity>
+          {mode === 'login' ? (
+            <>
+              <TouchableOpacity
+                onPress={() => switchToMode('register')}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Criar conta</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => switchToMode('reset')}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Esqueci minha senha</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              onPress={() => switchToMode('login')}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Voltar para login</Text>
+            </TouchableOpacity>
+          )}
 
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+          {message ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+              style={styles.message}
+            >
+              {message}
+            </Text>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -230,7 +290,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   secondaryButton: {
-    marginTop: 14,
+    marginTop: 10,
     alignItems: 'center'
   },
   secondaryButtonText: {
