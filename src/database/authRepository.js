@@ -131,8 +131,12 @@ export async function createUser(email, password, recoveryCode) {
     );
 
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error?.message?.includes('UNIQUE constraint failed: users.email')) {
+      return false;
+    }
+
+    throw error;
   }
 }
 

@@ -446,8 +446,9 @@ export default function App() {
 
             {message ? (
               <Text
+                accessible
                 accessibilityLiveRegion="polite"
-                accessibilityRole={messageType === 'error' ? 'alert' : 'summary'}
+                accessibilityRole={messageType === 'error' ? 'alert' : undefined}
                 style={[
                   styles.message,
                   messageType === 'error'
