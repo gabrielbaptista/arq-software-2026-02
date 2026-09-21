@@ -140,8 +140,13 @@ export async function authenticateUser(email, password) {
   const passwordSalt = createSaltHex();
   const passwordHash = deriveHash(password, passwordSalt);
 
+  const legacyPasswordSetClause = columnNames.has('password') ? ', password = NULL' : '';
+
   await db.runAsync(
-    'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?;',
+    `UPDATE users
+     SET password_hash = ?,
+         password_salt = ?${legacyPasswordSetClause}
+     WHERE id = ?;`,
     [passwordHash, passwordSalt, user.id]
   );
 
@@ -209,10 +214,12 @@ export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
 
   const newPasswordSalt = createSaltHex();
   const newPasswordHash = deriveHash(newPassword, newPasswordSalt);
+  const legacyPasswordSetClause = columnNames.has('password') ? ', password = NULL' : '';
+
   const updateResult = await db.runAsync(
     `UPDATE users
      SET password_hash = ?,
-         password_salt = ?
+         password_salt = ?${legacyPasswordSetClause}
      WHERE id = ?;`,
     [newPasswordHash, newPasswordSalt, user.id]
   );

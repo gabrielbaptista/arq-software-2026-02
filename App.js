@@ -27,10 +27,12 @@ export default function App() {
   const [mode, setMode] = useState('login');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('info');
+  const [databaseStatus, setDatabaseStatus] = useState('loading');
 
   const isCompactLayout = width < 420;
   const isResetMode = mode === 'reset';
   const isRegisterMode = mode === 'register';
+  const isDatabaseUnavailable = databaseStatus !== 'ready';
 
   const cardWidth = useMemo(() => {
     if (width >= 900) return 460;
@@ -39,10 +41,15 @@ export default function App() {
   }, [width]);
 
   useEffect(() => {
-    initializeAuthDatabase().catch(() => {
-      setMessageType('error');
-      setMessage('Erro ao iniciar banco local.');
-    });
+    initializeAuthDatabase()
+      .then(() => {
+        setDatabaseStatus('ready');
+      })
+      .catch(() => {
+        setDatabaseStatus('error');
+        setMessageType('error');
+        setMessage('Erro ao iniciar banco local.');
+      });
   }, []);
 
 
@@ -78,6 +85,11 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !password) {
       showError('Informe e-mail e senha.');
       return;
@@ -99,6 +111,11 @@ export default function App() {
   };
 
   const handleRegister = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !password || !recoveryCode) {
       showError('Informe e-mail, senha e código de recuperação.');
       return;
@@ -121,6 +138,11 @@ export default function App() {
   };
 
   const handlePasswordReset = async () => {
+    if (isDatabaseUnavailable) {
+      showError('Banco local indisponível no momento.');
+      return;
+    }
+
     if (!email.trim() || !recoveryCode || !newPassword) {
       showError('Informe e-mail, código de recuperação e nova senha.');
       return;
@@ -209,8 +231,9 @@ export default function App() {
           )}
 
           <TouchableOpacity
+            disabled={isDatabaseUnavailable}
             onPress={handlePrimaryAction}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, isDatabaseUnavailable && styles.disabledButton]}
           >
             <Text style={styles.primaryButtonText}>
               {isResetMode ? 'Atualizar senha' : isRegisterMode ? 'Criar conta' : 'Entrar'}
@@ -220,12 +243,14 @@ export default function App() {
           {mode === 'login' ? (
             <>
               <TouchableOpacity
+                disabled={isDatabaseUnavailable}
                 onPress={() => switchToMode('register')}
                 style={styles.secondaryButton}
               >
                 <Text style={styles.secondaryButtonText}>Criar conta</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                disabled={isDatabaseUnavailable}
                 onPress={() => switchToMode('reset')}
                 style={styles.secondaryButton}
               >
@@ -234,6 +259,7 @@ export default function App() {
             </>
           ) : (
             <TouchableOpacity
+              disabled={isDatabaseUnavailable}
               onPress={() => switchToMode('login')}
               style={styles.secondaryButton}
             >
@@ -322,6 +348,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600'
+  },
+  disabledButton: {
+    opacity: 0.6
   },
   secondaryButton: {
     marginTop: 10,
