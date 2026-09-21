@@ -26,39 +26,47 @@ function deriveHash(secret, saltHex) {
   return bytesToHex(derivedBytes);
 }
 
+async function sha256Hex(value) {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    value
+  );
+}
+
+async function getUsersColumnSet(db) {
+  const columns = await db.getAllAsync('PRAGMA table_info(users);');
+  return new Set(columns.map((column) => column.name));
+}
+
 async function ensureUsersTableSchema(db) {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
-      recovery_code_hash TEXT NOT NULL,
-      recovery_code_salt TEXT NOT NULL
+      password_hash TEXT,
+      password_salt TEXT,
+      recovery_code_hash TEXT,
+      recovery_code_salt TEXT
     );
   `);
 
-  const columns = await db.getAllAsync('PRAGMA table_info(users);');
-  const columnNames = new Set(columns.map((column) => column.name));
+  const columnNames = await getUsersColumnSet(db);
 
-  const hasSaltColumns =
-    columnNames.has('password_salt') && columnNames.has('recovery_code_salt');
-
-  if (hasSaltColumns) {
-    return;
+  if (!columnNames.has('password_hash')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN password_hash TEXT;');
   }
 
-  await db.execAsync(`
-    DROP TABLE users;
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
-      recovery_code_hash TEXT NOT NULL,
-      recovery_code_salt TEXT NOT NULL
-    );
-  `);
+  if (!columnNames.has('password_salt')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN password_salt TEXT;');
+  }
+
+  if (!columnNames.has('recovery_code_hash')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN recovery_code_hash TEXT;');
+  }
+
+  if (!columnNames.has('recovery_code_salt')) {
+    await db.execAsync('ALTER TABLE users ADD COLUMN recovery_code_salt TEXT;');
+  }
 }
 
 export async function initializeAuthDatabase() {
@@ -69,9 +77,16 @@ export async function initializeAuthDatabase() {
 export async function authenticateUser(email, password) {
   const db = await dbPromise;
   const normalizedEmail = email.trim();
+  const columnNames = await getUsersColumnSet(db);
+
+  const selectableColumns = ['id'];
+
+  if (columnNames.has('password_hash')) selectableColumns.push('password_hash');
+  if (columnNames.has('password_salt')) selectableColumns.push('password_salt');
+  if (columnNames.has('password')) selectableColumns.push('password');
 
   const user = await db.getFirstAsync(
-    'SELECT password_hash, password_salt FROM users WHERE email = ?;',
+    `SELECT ${selectableColumns.join(', ')} FROM users WHERE email = ?;`,
     [normalizedEmail]
   );
 
@@ -79,7 +94,29 @@ export async function authenticateUser(email, password) {
     return false;
   }
 
-  return deriveHash(password, user.password_salt) === user.password_hash;
+  if (user.password_hash && user.password_salt) {
+    return deriveHash(password, user.password_salt) === user.password_hash;
+  }
+
+  if (typeof user.password !== 'string') {
+    return false;
+  }
+
+  const isLegacyPasswordValid = user.password === password;
+
+  if (!isLegacyPasswordValid) {
+    return false;
+  }
+
+  const passwordSalt = createSaltHex();
+  const passwordHash = deriveHash(password, passwordSalt);
+
+  await db.runAsync(
+    'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?;',
+    [passwordHash, passwordSalt, user.id]
+  );
+
+  return true;
 }
 
 export async function createUser(email, password, recoveryCode) {
@@ -117,19 +154,25 @@ export async function createUser(email, password, recoveryCode) {
 export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
   const db = await dbPromise;
   const normalizedEmail = email.trim();
+  const columnNames = await getUsersColumnSet(db);
+
+  const selectableColumns = ['id'];
+
+  if (columnNames.has('recovery_code_hash')) selectableColumns.push('recovery_code_hash');
+  if (columnNames.has('recovery_code_salt')) selectableColumns.push('recovery_code_salt');
 
   const user = await db.getFirstAsync(
-    `SELECT id, recovery_code_hash, recovery_code_salt
-     FROM users
-     WHERE email = ?;`,
+    `SELECT ${selectableColumns.join(', ')} FROM users WHERE email = ?;`,
     [normalizedEmail]
   );
 
-  if (!user) {
+  if (!user || !user.recovery_code_hash) {
     return false;
   }
 
-  const providedRecoveryHash = deriveHash(recoveryCode, user.recovery_code_salt);
+  const providedRecoveryHash = user.recovery_code_salt
+    ? deriveHash(recoveryCode, user.recovery_code_salt)
+    : await sha256Hex(recoveryCode);
 
   if (providedRecoveryHash !== user.recovery_code_hash) {
     return false;
@@ -137,10 +180,23 @@ export async function resetPasswordByEmail(email, recoveryCode, newPassword) {
 
   const newPasswordSalt = createSaltHex();
   const newPasswordHash = deriveHash(newPassword, newPasswordSalt);
+  const newRecoveryCodeSalt = createSaltHex();
+  const newRecoveryCodeHash = deriveHash(recoveryCode, newRecoveryCodeSalt);
 
   const updateResult = await db.runAsync(
-    'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?;',
-    [newPasswordHash, newPasswordSalt, user.id]
+    `UPDATE users
+     SET password_hash = ?,
+         password_salt = ?,
+         recovery_code_hash = ?,
+         recovery_code_salt = ?
+     WHERE id = ?;`,
+    [
+      newPasswordHash,
+      newPasswordSalt,
+      newRecoveryCodeHash,
+      newRecoveryCodeSalt,
+      user.id
+    ]
   );
 
   return updateResult.changes > 0;
