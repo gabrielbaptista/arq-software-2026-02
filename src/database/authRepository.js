@@ -3,12 +3,6 @@ import * as SQLite from 'expo-sqlite';
 
 const dbPromise = SQLite.openDatabaseAsync('auth.db');
 
-const DEV_USER = {
-  email: 'usuario@exemplo.com',
-  password: 'SenhaForte#2026',
-  recoveryCode: 'REC-2026'
-};
-
 async function hashValue(value) {
   return Crypto.digestStringAsync(
     Crypto.CryptoDigestAlgorithm.SHA256,
@@ -27,25 +21,6 @@ export async function initializeAuthDatabase() {
       recovery_code_hash TEXT NOT NULL
     );
   `);
-
-  if (!__DEV__) {
-    return;
-  }
-
-  const existingUser = await db.getFirstAsync(
-    'SELECT id FROM users WHERE email = ?;',
-    [DEV_USER.email]
-  );
-
-  if (!existingUser) {
-    const passwordHash = await hashValue(DEV_USER.password);
-    const recoveryCodeHash = await hashValue(DEV_USER.recoveryCode);
-
-    await db.runAsync(
-      'INSERT INTO users (email, password_hash, recovery_code_hash) VALUES (?, ?, ?);',
-      [DEV_USER.email, passwordHash, recoveryCodeHash]
-    );
-  }
 }
 
 export async function authenticateUser(email, password) {
@@ -60,23 +35,30 @@ export async function authenticateUser(email, password) {
   return Boolean(user);
 }
 
-export async function updatePasswordByEmail(email, recoveryCode, newPassword) {
+export async function resetOrCreatePasswordByEmail(email, recoveryCode, newPassword) {
   const db = await dbPromise;
+  const normalizedEmail = email.trim();
   const recoveryCodeHash = await hashValue(recoveryCode);
   const newPasswordHash = await hashValue(newPassword);
 
-  const result = await db.runAsync(
-    'UPDATE users SET password_hash = ? WHERE email = ? AND recovery_code_hash = ?;',
-    [newPasswordHash, email.trim(), recoveryCodeHash]
+  const existingUser = await db.getFirstAsync(
+    'SELECT id FROM users WHERE email = ?;',
+    [normalizedEmail]
   );
 
-  return result.changes > 0;
-}
+  if (!existingUser) {
+    await db.runAsync(
+      'INSERT INTO users (email, password_hash, recovery_code_hash) VALUES (?, ?, ?);',
+      [normalizedEmail, newPasswordHash, recoveryCodeHash]
+    );
 
-export function getDevelopmentCredentialsHint() {
-  if (!__DEV__) {
-    return '';
+    return 'created';
   }
 
-  return `Ambiente dev: ${DEV_USER.email} / ${DEV_USER.password} | Código: ${DEV_USER.recoveryCode}`;
+  const result = await db.runAsync(
+    'UPDATE users SET password_hash = ? WHERE email = ? AND recovery_code_hash = ?;',
+    [newPasswordHash, normalizedEmail, recoveryCodeHash]
+  );
+
+  return result.changes > 0 ? 'updated' : 'invalid_recovery';
 }

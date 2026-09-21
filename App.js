@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import {
   authenticateUser,
-  getDevelopmentCredentialsHint,
   initializeAuthDatabase,
-  updatePasswordByEmail
+  resetOrCreatePasswordByEmail
 } from './src/database/authRepository';
 
 export default function App() {
@@ -71,26 +70,28 @@ export default function App() {
     }
 
     try {
-      const didUpdatePassword = await updatePasswordByEmail(
+      const resetResult = await resetOrCreatePasswordByEmail(
         email,
         recoveryCode,
         newPassword
       );
 
-      if (!didUpdatePassword) {
-        setMessage('Dados inválidos para redefinição de senha.');
+      if (resetResult === 'invalid_recovery') {
+        setMessage('Código de recuperação inválido.');
         return;
       }
 
       clearSensitiveFields();
       setIsResetMode(false);
-      setMessage('Senha atualizada. Faça login com a nova senha.');
+      setMessage(
+        resetResult === 'created'
+          ? 'Conta criada. Faça login com a senha definida.'
+          : 'Senha atualizada. Faça login com a nova senha.'
+      );
     } catch {
       setMessage('Erro ao atualizar senha no banco local.');
     }
   };
-
-  const developmentCredentialsHint = getDevelopmentCredentialsHint();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -163,9 +164,6 @@ export default function App() {
           </TouchableOpacity>
 
           {message ? <Text style={styles.message}>{message}</Text> : null}
-          {developmentCredentialsHint ? (
-            <Text style={styles.hint}>{developmentCredentialsHint}</Text>
-          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -245,11 +243,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#111827',
     fontSize: 14
-  },
-  hint: {
-    marginTop: 12,
-    textAlign: 'center',
-    color: '#6b7280',
-    fontSize: 12
   }
 });
